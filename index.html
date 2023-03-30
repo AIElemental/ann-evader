@@ -1,1 +1,94 @@
-<h1>Initial</h1>
+<!DOCTYPE html>
+<html>
+<head>
+      
+      <script type = "text/javascript">
+        
+         function animate() {
+            setInterval(() => {frame()}, 1000/60);
+         }
+		 
+		 var invader = {
+		   "x":150,
+		   "y":200,
+		   "rot":Math.PI/4,
+		   "fillStyle":"red"
+		 }
+		 var evader = {
+		   "x":300,
+		   "y":300,
+		   "rot":Math.PI*3/4,
+		   "fillStyle":"blue"
+		 }
+		 var bullet = {
+		   "x":30,
+		   "y":30,
+		   "size": 10,
+		   "fillStyle":"black"
+		 }
+		 function drawShip(ctx, ship) {
+		    //console.log(ship)
+			ctx.fillStyle = ship.fillStyle;
+			 ctx.save();
+			   ctx.translate(ship.x,ship.y); 
+               
+               ctx.rotate( ship.rot );
+               
+               var path=new Path2D();
+				path.moveTo(50,0);
+				path.lineTo(0,-50);
+				path.lineTo(-50,0);
+				ctx.fill(path);
+               ctx.restore();
+		 }
+		 function drawBullet(ctx, bullet) {
+		    //console.log(bullet)
+			ctx.fillStyle = bullet.fillStyle;
+			 ctx.save();
+			   ctx.translate(bullet.x,bullet.y); 
+               
+               ctx.arc(0, 0, bullet.size, 0, Math.PI * 2, false);
+			ctx.fillStyle = bullet.fillStyle;
+			ctx.fill()
+				ctx.restore()
+		 }
+         
+         function drawFrame() {
+            
+            // get the canvas element using the DOM
+            var canvas = document.getElementById('frame');
+			var dimension = [document.getElementById("frame-div").offsetWidth, document.getElementById("frame-div").offsetHeight];
+
+			canvas.width = dimension[0];
+			canvas.height = dimension[1];
+            
+            // Make sure we don't execute when canvas isn't supported
+            if (canvas.getContext) {
+            
+               // use getContext to use the canvas for drawing
+               var ctx = canvas.getContext('2d');
+               ctx.clearRect(0, 0, canvas.width, canvas.height);
+               
+			   drawShip(ctx, invader);
+			   drawShip(ctx, evader);
+			   drawBullet(ctx, bullet);
+            } else {
+               alert('Canvas.getContext not supported in your browser');
+            }
+         }
+		 
+		 function frame() {
+			drawFrame()
+			invader.rot += 2*Math.PI/60;
+			evader.rot -= 2*Math.PI/60;
+			bullet.x += 1;
+		 }
+      </script>
+   </head>
+   
+   <body onload = "animate();">
+      <div id="frame-div" style="width: 400px; height: 400px;">
+      <canvas id = "frame"></canvas>
+	  </div>
+   </body>
+</html>
