@@ -1,94 +1,228 @@
 <!DOCTYPE html>
 <html>
-<head>
-      
-      <script type = "text/javascript">
-        
-         function animate() {
-            setInterval(() => {frame()}, 1000/60);
-         }
-		 
-		 var invader = {
-		   "x":150,
-		   "y":200,
-		   "rot":Math.PI/4,
-		   "fillStyle":"red"
-		 }
-		 var evader = {
-		   "x":300,
-		   "y":300,
-		   "rot":Math.PI*3/4,
-		   "fillStyle":"blue"
-		 }
-		 var bullet = {
-		   "x":30,
-		   "y":30,
-		   "size": 10,
-		   "fillStyle":"black"
-		 }
-		 function drawShip(ctx, ship) {
-		    //console.log(ship)
-			ctx.fillStyle = ship.fillStyle;
-			 ctx.save();
-			   ctx.translate(ship.x,ship.y); 
-               
-               ctx.rotate( ship.rot );
-               
-               var path=new Path2D();
-				path.moveTo(50,0);
-				path.lineTo(0,-50);
-				path.lineTo(-50,0);
-				ctx.fill(path);
-               ctx.restore();
-		 }
-		 function drawBullet(ctx, bullet) {
-		    //console.log(bullet)
-			ctx.fillStyle = bullet.fillStyle;
-			 ctx.save();
-			   ctx.translate(bullet.x,bullet.y); 
-               
-               ctx.arc(0, 0, bullet.size, 0, Math.PI * 2, false);
-			ctx.fillStyle = bullet.fillStyle;
-			ctx.fill()
-				ctx.restore()
-		 }
-         
-         function drawFrame() {
-            
-            // get the canvas element using the DOM
-            var canvas = document.getElementById('frame');
-			var dimension = [document.getElementById("frame-div").offsetWidth, document.getElementById("frame-div").offsetHeight];
 
-			canvas.width = dimension[0];
-			canvas.height = dimension[1];
-            
+<head>
+    <script type="text/javascript">
+        class Network {
+            // nodes is [], nodes[x] is node k from any layerIdx, its a function-lambda
+            // layerIdxs [], layerIdxs[x] is amount of nodes in layerIdx x, sum of layerIdxs should be equal to nodes length
+            // links is [[], ], links[x][y] is link from x to y if present
+            constructor(middleLayerIdxFunction, outputLayerIdxFunction, layers, links) {
+                this.middleLayerIdxFunction = middleLayerIdxFunction;
+                this.outputLayerIdxFunction = outputLayerIdxFunction;
+                this.layers = layers;
+                this.links = links;
+            }
+
+            getNodeLayer(id) {
+                let skipped = 0
+                for (var layerIdx = 0; layerIdx < this.layers.length; layerIdx++) {
+                    let layerSize = this.layers[layerIdx]
+                    if (id < skipped + layerSize) {
+                        return { "layerIdx": layerIdx, "layerNodeIdx": (id - skipped) }
+                    }
+                    skipped += layerSize
+                }
+            }
+        }
+
+        let evaderNetwork = new Network(
+            (input) => sign(input),
+            (input) => sign(input),
+            [3, 4, 2],
+            [[0, 3], [4, 7]]
+        )
+
+        const handleMovement = (e) => {
+
+            let speed = 5
+
+            switch (e.key) {
+                case 'a':
+                    invader.x += speed;
+                    break;
+                case 'd':
+                    invader.x -= speed;
+                    break;
+                case 'w':
+                    invader.y += speed;
+                    break;
+                case 's':
+                    invader.y -= speed;
+                    break;
+            }
+        };
+
+        var invader = {
+            "x": 150,
+            "y": 200,
+            "rot": Math.PI / 4,
+            "fillStyle": "red"
+        }
+        var evader = {
+            "x": 300,
+            "y": 300,
+            "rot": Math.PI * 3 / 4,
+            "fillStyle": "blue"
+        }
+        var bullet = {
+            "x": 30,
+            "y": 30,
+            "size": 10,
+            "fillStyle": "black"
+        }
+        function drawShip(ctx, ship) {
+            //console.log(ship)
+            ctx.fillStyle = ship.fillStyle;
+            ctx.save();
+            ctx.translate(ship.x, ship.y);
+
+            ctx.rotate(ship.rot);
+
+            var path = new Path2D();
+            path.moveTo(50, 0);
+            path.lineTo(0, -50);
+            path.lineTo(-50, 0);
+            ctx.fill(path);
+            ctx.restore();
+        }
+
+        function drawBullet(ctx, bullet) {
+            //console.log(bullet)
+            ctx.save();
+            ctx.translate(bullet.x, bullet.y);
+            ctx.beginPath()
+            ctx.arc(0, 0, bullet.size, 0, Math.PI * 2, false);
+            ctx.fillStyle = bullet.fillStyle;
+
+            //stroke will draw the circle
+            ctx.fill()
+            ctx.restore()
+        }
+
+        function drawBorder(ctx, canvas) {
+            // set line stroke and line width
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 1;
+
+            // draw a red line
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(canvas.width, 0);
+            ctx.lineTo(canvas.width, canvas.height);
+            ctx.lineTo(0, canvas.height);
+            ctx.stroke();
+        }
+
+        function drawFrame() {
+
+            // get the canvas element using the DOM
+            var canvas = document.getElementById('frame-canvas');
+            var dimension = [document.getElementById("frame-div").offsetWidth, document.getElementById("frame-div").offsetHeight];
+
+            canvas.width = dimension[0];
+            canvas.height = dimension[1];
+
             // Make sure we don't execute when canvas isn't supported
             if (canvas.getContext) {
-            
-               // use getContext to use the canvas for drawing
-               var ctx = canvas.getContext('2d');
-               ctx.clearRect(0, 0, canvas.width, canvas.height);
-               
-			   drawShip(ctx, invader);
-			   drawShip(ctx, evader);
-			   drawBullet(ctx, bullet);
+
+                // use getContext to use the canvas for drawing
+                var ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.transform(1, 0, 0, -1, 0, canvas.height) // flip y
+
+                drawBorder(ctx, canvas);
+
+                drawShip(ctx, invader);
+                drawShip(ctx, evader);
+                drawBullet(ctx, bullet);
             } else {
-               alert('Canvas.getContext not supported in your browser');
+                alert('Canvas.getContext not supported in your browser');
             }
-         }
-		 
-		 function frame() {
-			drawFrame()
-			invader.rot += 2*Math.PI/60;
-			evader.rot -= 2*Math.PI/60;
-			bullet.x += 1;
-		 }
-      </script>
-   </head>
-   
-   <body onload = "animate();">
-      <div id="frame-div" style="width: 400px; height: 400px;">
-      <canvas id = "frame"></canvas>
-	  </div>
-   </body>
+        }
+
+        function drawNetwork() {
+
+            // get the canvas element using the DOM
+            var canvas = document.getElementById('network-canvas');
+            var dimension = [document.getElementById("network-div").offsetWidth, document.getElementById("network-div").offsetHeight];
+
+            canvas.width = dimension[0];
+            canvas.height = dimension[1];
+
+            // Make sure we don't execute when canvas isn't supported
+            if (canvas.getContext) {
+
+                // use getContext to use the canvas for drawing
+                var ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                // ctx.transform(1, 0, 0, -1, 0, canvas.height) // flip y
+
+                drawBorder(ctx, canvas);
+
+                let network = evaderNetwork;
+                for (var layerIdx = 0; layerIdx < network.layers.length; layerIdx++) {
+                    let xShift = 50 * (layerIdx + 1)
+                    for (var layerNodeIdx = 0; layerNodeIdx < network.layers[layerIdx]; layerNodeIdx++) {
+                        let yShift = 50 * (layerNodeIdx + 1)
+                        // console.log("draw node " + layerIdx + ":" + layerNodeIdx)
+                        drawBullet(ctx, {
+                            "x": xShift,
+                            "y": yShift,
+                            "size": 10,
+                            "fillStyle": "black"
+                        })
+                    }
+                }
+
+                for (var linkIdx = 0; linkIdx < network.links.length; linkIdx++) {
+                    let fromIdx = network.links[linkIdx][0]
+                    let toIdx = network.links[linkIdx][1]
+                    let from = network.getNodeLayer(fromIdx)
+                    let to = network.getNodeLayer(toIdx)
+
+
+                    // set line stroke and line width
+                    ctx.strokeStyle = 'red';
+                    ctx.lineWidth = 5;
+
+                    // draw a red line
+                    ctx.beginPath();
+                    let xShift = 50 * (from.layerIdx + 1)
+                    let yShift = 50 * (from.layerNodeIdx + 1)
+                    ctx.moveTo(xShift, yShift);
+                    xShift = 50 * (to.layerIdx + 1)
+                    yShift = 50 * (to.layerNodeIdx + 1)
+                    ctx.lineTo(xShift, yShift);
+                    ctx.stroke();
+                }
+            } else {
+                alert('Canvas.getContext not supported in your browser');
+            }
+        }
+
+        function frame() {
+            drawFrame()
+            //invader.rot += 2 * Math.PI / 60;
+            evader.rot -= 2 * Math.PI / 60;
+            bullet.x += 1;
+            drawNetwork()
+        }
+
+        function animate() {
+            setInterval(() => { frame() }, 1000 / 60);
+            window.addEventListener('keydown', handleMovement);
+        }
+    </script>
+</head>
+
+<body onload="animate();">
+    <div id="frame-div" style="width: 400px; height: 400px;">
+        <canvas id="frame-canvas"></canvas>
+    </div>
+    <div id="network-div" style="width: 400px; height: 400px;">
+        <canvas id="network-canvas"></canvas>
+    </div>
+</body>
+
 </html>
