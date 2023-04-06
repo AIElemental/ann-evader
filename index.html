@@ -3,11 +3,15 @@
 
 <head>
     <script type="text/javascript">
+        let fps = 60
+        let msPerFrame = 1000 / fps;
+
         class Network {
             // nodes is [], nodes[x] is node k from any layerIdx, its a function-lambda
             // layerIdxs [], layerIdxs[x] is amount of nodes in layerIdx x, sum of layerIdxs should be equal to nodes length
             // links is [[], ], links[x][y] is link from x to y if present
             constructor(middleLayerIdxFunction, outputLayerIdxFunction, layers, links) {
+                this.frontLayerFunction = (i) => i;
                 this.middleLayerIdxFunction = middleLayerIdxFunction;
                 this.outputLayerIdxFunction = outputLayerIdxFunction;
                 this.layers = layers;
@@ -16,12 +20,42 @@
 
             getNodeLayer(id) {
                 let skipped = 0
-                for (var layerIdx = 0; layerIdx < this.layers.length; layerIdx++) {
+                for (let layerIdx = 0; layerIdx < this.layers.length; layerIdx++) {
                     let layerSize = this.layers[layerIdx]
                     if (id < skipped + layerSize) {
                         return { "layerIdx": layerIdx, "layerNodeIdx": (id - skipped) }
                     }
                     skipped += layerSize
+                }
+            }
+
+            trainSingle(input, response) {
+            }
+
+            calc(input) {
+                if (input.length != this.layers[0]) {
+                    console.log("Bad input")
+                    return
+                }
+
+                let middleIn = Array.from({ length: this.layers[1] }, (v, i) => 0)
+                for (let linkIdx = 0; linkIdx < this.links; linkIdx++) {
+                    let link = this.links[linkIdx];
+                    let startLayer = getNodeLayer(link[0])
+                    if (startLayer.layerIdx != 0) continue;
+                    let endLayer = getNodeLayer(link[1])
+                    if (endLayer.layerIdx != 1) continue
+
+                    middleIn[endLayer.layerNodeIdx] += link[2] * input[startLayer.layerNodeIdx]
+                }
+
+                //todo continue from here
+
+                let middleOut = Array.from({ length: layers[1] }, (v, i) => 0)
+
+                for (let layerIdx = 1; layerIdx < this.layers.length; layerIdx++) {
+                    let layerInput = Array.from({ length: layers[layerIdx] }, (v, i) => 0)
+                    let layerOutput = Array.from({ length: layers[layerIdx] }, (v, i) => 0)
                 }
             }
         }
@@ -30,7 +64,7 @@
             (input) => sign(input),
             (input) => sign(input),
             [3, 4, 2],
-            [[0, 3], [4, 7]]
+            [[0, 3, 1], [4, 7, 1]]
         )
 
         const handleMovement = (e) => {
@@ -39,10 +73,10 @@
 
             switch (e.key) {
                 case 'a':
-                    invader.x += speed;
+                    invader.x -= speed;
                     break;
                 case 'd':
-                    invader.x -= speed;
+                    invader.x += speed;
                     break;
                 case 'w':
                     invader.y += speed;
@@ -81,8 +115,9 @@
 
             var path = new Path2D();
             path.moveTo(50, 0);
-            path.lineTo(0, -50);
-            path.lineTo(-50, 0);
+            path.lineTo(0, -20);
+            path.lineTo(10, 0);
+            path.lineTo(0, 20);
             ctx.fill(path);
             ctx.restore();
         }
@@ -201,6 +236,35 @@
             }
         }
 
+        function getMousePos(canvas, evt) {
+            var rect = canvas.getBoundingClientRect(), // abs. size of element
+                scaleX = canvas.width / rect.width,    // relationship bitmap vs. element for x
+                scaleY = canvas.height / rect.height;  // relationship bitmap vs. element for y
+
+            return {
+                x: (evt.clientX - rect.left) * scaleX,   // scale mouse coordinates after they have
+                y: rect.height - (evt.clientY - rect.top) * scaleY     // been adjusted to be relative to element
+            }
+        }
+
+        let handleMousemove = (event) => {
+            var shipCanvas = document.getElementById('frame-canvas');
+            let mouseCanvas = getMousePos(shipCanvas, event)
+            //reverse y as canvas has y 0 in the bottom left
+            invader.rot = Math.atan2(mouseCanvas.y - invader.y, mouseCanvas.x - invader.x)
+        };
+
+        let throttle = (func, delay) => {
+            let prev = Date.now() - delay;
+            return (...args) => {
+                let current = Date.now();
+                if (current - prev >= delay) {
+                    prev = current;
+                    func.apply(null, args);
+                }
+            }
+        };
+
         function frame() {
             drawFrame()
             //invader.rot += 2 * Math.PI / 60;
@@ -210,8 +274,9 @@
         }
 
         function animate() {
-            setInterval(() => { frame() }, 1000 / 60);
+            setInterval(() => { frame() }, msPerFrame);
             window.addEventListener('keydown', handleMovement);
+            document.addEventListener('mousemove', throttle(handleMousemove, msPerFrame));
         }
     </script>
 </head>
