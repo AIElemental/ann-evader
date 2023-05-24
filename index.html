@@ -5,6 +5,15 @@
     <script type="text/javascript">
         let fps = 60
         let msPerFrame = 1000 / fps;
+        let maxInvaderSpeedPerFrame = 150.0 / fps;
+        let maxInvaderAccelPerFrame = 70.0 / fps;
+        let maxInvaderDecelRatePerFrame = 10.0 / fps;
+        let minInvaderSpeedPerFrame = 4.0 / fps;
+        let bulletSpeed = 500.0 / fps;
+        let bulletPoolSize = 100;
+        let bulletSize = 10;
+
+        let annNodeSize = 15;
 
         class Network {
             // nodes is [], nodes[x] is node k from any layerIdx, its a function-lambda
@@ -30,6 +39,7 @@
             }
 
             trainSingle(input, response) {
+
             }
 
             calc(input) {
@@ -67,49 +77,97 @@
             [[0, 3, 1], [4, 7, 1]]
         )
 
-        const handleMovement = (e) => {
-
-            let speed = 5
-
+        const accelStart = (e) => {
             switch (e.key) {
                 case 'a':
-                    invader.x -= speed;
+                    invader.accel.x.negative = 1;
                     break;
                 case 'd':
-                    invader.x += speed;
+                    invader.accel.x.positive = 1;
                     break;
                 case 'w':
-                    invader.y += speed;
+                    invader.accel.y.positive = 1;
                     break;
                 case 's':
-                    invader.y -= speed;
+                    invader.accel.y.negative = 1;
+                    break;
+                case ' ':
+                    invader.gun.pressed = 1;
                     break;
             }
         };
 
-        var invader = {
-            "x": 150,
-            "y": 200,
-            "rot": Math.PI / 4,
-            "fillStyle": "red"
+        const accelStop = (e) => {
+            switch (e.key) {
+                case 'a':
+                    invader.accel.x.negative = 0;
+                    break;
+                case 'd':
+                    invader.accel.x.positive = 0;
+                    break;
+                case 'w':
+                    invader.accel.y.positive = 0;
+                    break;
+                case 's':
+                    invader.accel.y.negative = 0;
+                    break;
+                case ' ':
+                    invader.gun.pressed = 0;
+                    break;
+            }
+        };
+
+        function makeShip(x, y, rot, color) {
+            return {
+                "pos": { "x": x, "y": y },
+                "vel": { "x": 0, "y": 0 },
+                "accel": {
+                    "x": {
+                        "positive": 0, "negative": 0
+                    },
+                    "y": {
+                        "positive": 0, "negative": 0
+                    }
+                },
+                "rotation_target": {
+                    "x": 0, "y": 0
+                },
+                "rot": rot,
+                "fillStyle": color,
+                "gun": {
+                    "pressed": 0,
+                    "cooldown": 0
+                }
+            }
         }
-        var evader = {
-            "x": 300,
-            "y": 300,
-            "rot": Math.PI * 3 / 4,
-            "fillStyle": "blue"
+
+        function makeBullet(x, y, velX, velY, color) {
+            return {
+                "pos": { "x": x, "y": y },
+                "vel": { "x": velX, "y": velY },
+                "size": bulletSize,
+                "fillStyle": color
+            }
         }
-        var bullet = {
-            "x": 30,
-            "y": 30,
-            "size": 10,
-            "fillStyle": "black"
+
+        var mouse_pos = { "x": 0, "y": 0 };
+
+        var invader = makeShip(150, 200, Math.PI / 4, "red")
+        var evader = makeShip(300, 300, Math.PI * 3 / 4, "blue")
+
+        var bullets = []
+        var bulletPoolIdx = 0
+        var bullet = makeBullet(30, 30, 0, 0, "black");
+        for (let i = 0; i < bulletPoolSize; i++) {
+            bullets.push(makeBullet(-100, -100, 0, 0, "black"))
         }
+
+        bullets.push(bullet)
         function drawShip(ctx, ship) {
             //console.log(ship)
             ctx.fillStyle = ship.fillStyle;
             ctx.save();
-            ctx.translate(ship.x, ship.y);
+            ctx.translate(ship.pos.x, ship.pos.y);
 
             ctx.rotate(ship.rot);
 
@@ -125,7 +183,7 @@
         function drawBullet(ctx, bullet) {
             //console.log(bullet)
             ctx.save();
-            ctx.translate(bullet.x, bullet.y);
+            ctx.translate(bullet.pos.x, bullet.pos.y);
             ctx.beginPath()
             ctx.arc(0, 0, bullet.size, 0, Math.PI * 2, false);
             ctx.fillStyle = bullet.fillStyle;
@@ -170,7 +228,9 @@
 
                 drawShip(ctx, invader);
                 drawShip(ctx, evader);
-                drawBullet(ctx, bullet);
+                for (let i = 0; i < bullets.length; i++) {
+                    drawBullet(ctx, bullets[i]);
+                }
             } else {
                 alert('Canvas.getContext not supported in your browser');
             }
@@ -202,9 +262,8 @@
                         let yShift = 50 * (layerNodeIdx + 1)
                         // console.log("draw node " + layerIdx + ":" + layerNodeIdx)
                         drawBullet(ctx, {
-                            "x": xShift,
-                            "y": yShift,
-                            "size": 10,
+                            "pos": { "x": xShift, "y": yShift },
+                            "size": annNodeSize,
                             "fillStyle": "black"
                         })
                     }
@@ -219,14 +278,14 @@
 
                     // set line stroke and line width
                     ctx.strokeStyle = 'red';
-                    ctx.lineWidth = 5;
+                    ctx.lineWidth = Math.max(2, Math.log(network.links[linkIdx][2]));
 
                     // draw a red line
                     ctx.beginPath();
-                    let xShift = 50 * (from.layerIdx + 1)
+                    let xShift = 50 * (from.layerIdx + 1) + annNodeSize
                     let yShift = 50 * (from.layerNodeIdx + 1)
                     ctx.moveTo(xShift, yShift);
-                    xShift = 50 * (to.layerIdx + 1)
+                    xShift = 50 * (to.layerIdx + 1) - annNodeSize
                     yShift = 50 * (to.layerNodeIdx + 1)
                     ctx.lineTo(xShift, yShift);
                     ctx.stroke();
@@ -250,8 +309,10 @@
         let handleMousemove = (event) => {
             var shipCanvas = document.getElementById('frame-canvas');
             let mouseCanvas = getMousePos(shipCanvas, event)
+            mouse_pos.x = mouseCanvas.x;
+            mouse_pos.y = mouseCanvas.y;
             //reverse y as canvas has y 0 in the bottom left
-            invader.rot = Math.atan2(mouseCanvas.y - invader.y, mouseCanvas.x - invader.x)
+            invader.rot = Math.atan2(mouseCanvas.y - invader.pos.y, mouseCanvas.x - invader.pos.x)
         };
 
         let throttle = (func, delay) => {
@@ -265,17 +326,72 @@
             }
         };
 
+        function getBullet(pos, vel, rot) {
+            let b = bullets[bulletPoolIdx];
+            bulletPoolIdx = (bulletPoolIdx + 1) % bulletPoolSize;
+            b.pos.x = pos.x
+            b.pos.y = pos.y
+            b.vel.x = vel.x + bulletSpeed * Math.cos(rot);
+            b.vel.y = vel.y + bulletSpeed * Math.sin(rot);
+            return b
+        }
+
+        function handleGun(ship) {
+            if (ship.gun.pressed && !ship.gun.cooldown) {
+                let bullet = getBullet(ship.pos, ship.vel, ship.rot)
+                ship.gun.cooldown = 1
+            }
+            if (!ship.gun.pressed) {
+                ship.gun.cooldown = 0
+            }
+        }
+
+        function handleInvader(ship) {
+            accel_x = (-ship.accel.x.negative + ship.accel.x.positive) * maxInvaderAccelPerFrame
+            accel_y = (-ship.accel.y.negative + ship.accel.y.positive) * maxInvaderAccelPerFrame
+            ship.vel.x += accel_x
+            ship.vel.y += accel_y
+            ship.pos.x += ship.vel.x
+            ship.pos.y += ship.vel.y
+            ship.vel.x *= 0.95
+            ship.vel.y *= 0.95
+
+            if (Math.abs(ship.vel.x) < minInvaderSpeedPerFrame) ship.vel.x = 0
+            if (Math.abs(ship.vel.y) < minInvaderSpeedPerFrame) ship.vel.y = 0
+
+            ship.vel.x = Math.max(-maxInvaderSpeedPerFrame, Math.min(maxInvaderSpeedPerFrame, ship.vel.x));
+            ship.vel.y = Math.max(-maxInvaderSpeedPerFrame, Math.min(maxInvaderSpeedPerFrame, ship.vel.y));
+
+            ship.rot = Math.atan2(mouse_pos.y - ship.pos.y, mouse_pos.x - ship.pos.x)
+
+            handleGun(ship)
+        }
+
+        function handleBullet(bullet) {
+            bullet.pos.x += bullet.vel.x
+            bullet.pos.y += bullet.vel.y
+        }
+
+        function logicFrame() {
+            handleInvader(invader)
+            for (let i = 0; i < bullets.length; i++) {
+                handleBullet(bullets[i]);
+            }
+        }
+
         function frame() {
+            logicFrame()
             drawFrame()
-            //invader.rot += 2 * Math.PI / 60;
+
             evader.rot -= 2 * Math.PI / 60;
-            bullet.x += 1;
+            bullet.pos.x += 1;
             drawNetwork()
         }
 
         function animate() {
             setInterval(() => { frame() }, msPerFrame);
-            window.addEventListener('keydown', handleMovement);
+            window.addEventListener('keydown', accelStart);
+            window.addEventListener('keyup', accelStop);
             document.addEventListener('mousemove', throttle(handleMousemove, msPerFrame));
         }
     </script>
