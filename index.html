@@ -7,24 +7,66 @@
         let msPerFrame = 1000 / fps;
         let maxInvaderSpeedPerFrame = 150.0 / fps;
         let maxInvaderAccelPerFrame = 70.0 / fps;
-        let maxInvaderDecelRatePerFrame = 10.0 / fps;
-        let minInvaderSpeedPerFrame = 4.0 / fps;
+        let minInvaderSpeedPerFrame = 1.0 / fps;
+        let maxInvaderRotPerFrame = Math.PI / fps;
+        let maxEvaderSpeedPerFrame = maxInvaderSpeedPerFrame;
+        let maxEvaderAccelPerFrame = maxInvaderAccelPerFrame;
+        let minEvaderSpeedPerFrame = minInvaderSpeedPerFrame;
+        let maxEvaderRotPerFrame = maxInvaderRotPerFrame;
         let bulletSpeed = 500.0 / fps;
         let bulletPoolSize = 100;
         let bulletSize = 10;
+        let framesToCountAsHit = fps / 4
+        let queueSize = 60
+        let queuePeriod = 2
+        let networkBehaviorUpdatePeriod = fps / 8
+        let xRange = [0, 400]
+        let yRange = [0, 400]
 
         let annNodeSize = 15;
+        let frameNumber = 0;
+        let playerColor = "green"
+        let enemyColor = "blue"
+        let networkDrawState;
+
+        class Node {
+            constructor(layerIdx, layerNodeIdx) {
+                this.layerIdx = layerIdx;
+                this.layerNodeIdx = layerNodeIdx;
+            }
+
+            toString() {
+                return this.layerIdx + "/" + this.layerNodeIdx
+            }
+        }
+
+        class Link {
+            constructor(src, dst, weight) {
+                this.src = src;
+                this.dst = dst;
+                this.weight = weight;
+            }
+
+            toString() {
+                return this.src.toString() + "-(" + this.weight + ")->" + this.dst.toString()
+            }
+        }
 
         class Network {
             // nodes is [], nodes[x] is node k from any layerIdx, its a function-lambda
             // layerIdxs [], layerIdxs[x] is amount of nodes in layerIdx x, sum of layerIdxs should be equal to nodes length
             // links is [[], ], links[x][y] is link from x to y if present
             constructor(middleLayerIdxFunction, outputLayerIdxFunction, layers, links) {
-                this.frontLayerFunction = (i) => i;
                 this.middleLayerIdxFunction = middleLayerIdxFunction;
                 this.outputLayerIdxFunction = outputLayerIdxFunction;
                 this.layers = layers;
                 this.links = links;
+                this.trainInputQueue = [];
+                this.trainInputQueueBusy = false;
+                this.trainInputQueueIdx = 0;
+                for (let i = 0; i < queueSize; i++) {
+                    this.trainInputQueue.push(undefined)
+                }
             }
 
             getNodeLayer(id) {
@@ -38,59 +80,305 @@
                 }
             }
 
-            trainSingle(input, response) {
+            makeInput(invaderShip, evaderShip) {
+                /*
+                 inputs to network:
+                 distance
+                 angle from my front direction to player vector
+                 angle from player front direction to player vector
+                 self acceleration on/off
+                 self self rotation on/off
+                 */
+                let invader = invaderShip.shipBase;
+                let evader = evaderShip.shipBase;
+                let distance = Math.sqrt(Math.pow(invader.pos.x - evader.pos.x, 2)
+                    + Math.pow(invader.pos.y - evader.pos.y, 2)) / bulletSpeed;
+                let angleAtInvader = Math.atan2(invader.pos.y - evader.pos.y, invader.pos.x - evader.pos.x)
+                while (angleAtInvader >= Math.PI * 2) { angleAtInvader -= Math.PI * 2; }
+                while (angleAtInvader < 0) { angleAtInvader += Math.PI * 2; }
 
+                let evaderAway = angleAtInvader - evader.rot
+                while (evaderAway >= Math.PI * 2) { evaderAway -= Math.PI * 2; }
+                while (evaderAway < 0) { evaderAway += Math.PI * 2; }
+
+                let invaderAway = invader.rot + (Math.PI - angleAtInvader)
+                while (invaderAway >= Math.PI * 2) { invaderAway -= Math.PI * 2; }
+                while (invaderAway < 0) { invaderAway += Math.PI * 2; }
+
+                let accel = evaderShip.acceleratorOn
+                let rot = evaderShip.rotationOn
+
+                let input = [distance, evaderAway, invaderAway, accel, rot]
+                // console.log("Queueing" +
+                //     " distance=" + distance +
+                //     ", evaderAway=" + evaderAway +
+                //     ", invaderAway=" + invaderAway +
+                //     ", accel=" + accel +
+                //     ", rot=" + rot)
+                return input;
+            }
+
+            queueInput(invaderShip, evaderShip) {
+                if (this.trainInputQueueBusy) return;
+                let input = this.makeInput(invaderShip, evaderShip)
+
+                if (this.trainInputQueueIdx == 0) {
+                    let previousValue = this.trainInputQueue[this.trainInputQueueIdx]
+                    this.trainSingle(previousValue, -1)
+                }
+                this.trainInputQueue[this.trainInputQueueIdx] = input
+                this.trainInputQueueIdx = (this.trainInputQueueIdx + 1) % queueSize
+            }
+
+            trainSingle(input, result) {
+                if (input === undefined) return;
+                for (let secondLayerIdx = 0; secondLayerIdx < this.layers[1]; secondLayerIdx++) {
+
+                    let secondLayerNodeValue = 0;
+                    for (let linkIdx = 0; linkIdx < this.links.length; linkIdx++) {
+                        let link = this.links[linkIdx]
+                        if (link.src.layerIdx == 0 && link.dst.layerIdx == 1
+                            && link.dst.layerNodeIdx == secondLayerIdx) {
+                            secondLayerNodeValue += link.weight * input[link.src.layerNodeIdx]
+                        }
+                    }
+                    //console.log("train single idx=" + secondLayerIdx + " value=" + secondLayerNodeValue + " middleValue=" + this.middleLayerIdxFunction(secondLayerNodeValue))
+                    if (this.middleLayerIdxFunction(secondLayerNodeValue) > 0) {
+                        for (let linkIdx = 0; linkIdx < this.links.length; linkIdx++) {
+                            let link = this.links[linkIdx]
+                            if (link.src.layerIdx == 1 && link.dst.layerIdx == 2
+                                && link.src.layerNodeIdx == secondLayerIdx) {
+                                link.weight += result
+                                // console.log(link.toString() + " weight readjusted")
+                            }
+                        }
+                    }
+                }
+            }
+
+            trainOnLastEventsAsDeath(lastEventCount) {
+                this.trainInputQueueBusy = true
+                let smallQueue = [];
+                for (let i = 0; i < lastEventCount; i++) {
+                    smallQueue.push(this.trainInputQueue.shift())
+                }
+                this.trainInputQueueBusy = false
+                for (let i = 0; i < lastEventCount; i++) {
+                    this.trainSingle(smallQueue.shift(), 1)
+                }
             }
 
             calc(input) {
                 if (input.length != this.layers[0]) {
-                    console.log("Bad input")
+                    console.log("Bad input. Need array of length " + this.layers[0] + ". Got " + input.length)
                     return
                 }
 
-                let middleIn = Array.from({ length: this.layers[1] }, (v, i) => 0)
-                for (let linkIdx = 0; linkIdx < this.links; linkIdx++) {
-                    let link = this.links[linkIdx];
-                    let startLayer = getNodeLayer(link[0])
-                    if (startLayer.layerIdx != 0) continue;
-                    let endLayer = getNodeLayer(link[1])
-                    if (endLayer.layerIdx != 1) continue
+                let secondLayerValues = []
+                for (let secondLayerIdx = 0; secondLayerIdx < this.layers[1]; secondLayerIdx++) {
 
-                    middleIn[endLayer.layerNodeIdx] += link[2] * input[startLayer.layerNodeIdx]
+                    let secondLayerNodeValue = 0;
+                    for (let linkIdx = 0; linkIdx < this.links.length; linkIdx++) {
+                        let link = this.links[linkIdx]
+                        if (link.src.layerIdx == 0 && link.dst.layerIdx == 1
+                            && link.dst.layerNodeIdx == secondLayerIdx) {
+                            secondLayerNodeValue += link.weight * input[link.src.layerNodeIdx]
+                        }
+                    }
+                    secondLayerValues.push(this.middleLayerIdxFunction(secondLayerNodeValue))
                 }
 
-                //todo continue from here
+                let networkResult = 0;
+                for (let layerIdx = 0; layerIdx < this.layers[2]; layerIdx++) {
 
-                let middleOut = Array.from({ length: layers[1] }, (v, i) => 0)
-
-                for (let layerIdx = 1; layerIdx < this.layers.length; layerIdx++) {
-                    let layerInput = Array.from({ length: layers[layerIdx] }, (v, i) => 0)
-                    let layerOutput = Array.from({ length: layers[layerIdx] }, (v, i) => 0)
+                    let inSignal = 0;
+                    for (let linkIdx = 0; linkIdx < this.links.length; linkIdx++) {
+                        let link = this.links[linkIdx]
+                        if (link.src.layerIdx == 1 && link.dst.layerIdx == 2
+                            && link.dst.layerNodeIdx == layerIdx) {
+                            inSignal += link.weight * secondLayerValues[link.src.layerNodeIdx]
+                        }
+                    }
+                    networkResult = this.outputLayerIdxFunction(inSignal)
                 }
+                return [input, secondLayerValues, [networkResult]]
             }
         }
 
+        class BulletPool {
+            // nodes is [], nodes[x] is node k from any layerIdx, its a function-lambda
+            // layerIdxs [], layerIdxs[x] is amount of nodes in layerIdx x, sum of layerIdxs should be equal to nodes length
+            // links is [[], ], links[x][y] is link from x to y if present
+            constructor(poolSize, color) {
+                this.bullets = [];
+                this.poolSize = poolSize;
+                this.bulletPoolIdx = 0;
+                for (let i = 0; i < this.poolSize; i++) {
+                    this.bullets.push(new Bullet(-100, -100, 0, 0, "black"))
+                }
+            }
+
+            getBullet(pos, vel, rot) {
+                let b = this.bullets[this.bulletPoolIdx];
+                this.bulletPoolIdx = (this.bulletPoolIdx + 1) % this.poolSize;
+                b.pos.x = pos.x
+                b.pos.y = pos.y
+                b.vel.x = vel.x + bulletSpeed * Math.cos(rot);
+                b.vel.y = vel.y + bulletSpeed * Math.sin(rot);
+                return b
+            }
+        }
+
+        class Bullet {
+            constructor(x, y, velX, velY, color) {
+                this.pos = { "x": x, "y": y };
+                this.vel = { "x": velX, "y": velY };
+                this.size = bulletSize;
+                this.fillStyle = color;
+            }
+
+            vanish() {
+                this.pos = { "x": -100, "y": -100 };
+                this.vel = { "x": 0, "y": 0 };
+            }
+        }
+
+        class ShipBase {
+            constructor(x, y, rot, color) {
+                this.pos = { "x": x, "y": y };
+                this.vel = { "x": 0, "y": 0 };
+                this.rot = 0;
+                this.acceleratorOn = 0;
+                this.fillStyle = color;
+            }
+        }
+
+        class EvaderShip {
+            constructor(shipBase) {
+                this.shipBase = shipBase;
+                this.rotationOn = 0;
+                this.wasHit = false;
+            }
+        }
+
+        class PlayerShip {
+            constructor(shipBase) {
+                this.shipBase = shipBase;
+                this.targetRot = 0;
+                this.gun = {
+                    "pressed": 0,
+                    "cooldown": 0
+                };
+            }
+        }
+
+        function normalizeAngle(value) {
+            while (value >= Math.PI * 2) {
+                value -= Math.PI * 2;
+            }
+            while (value < 0) {
+                value += Math.PI * 2;
+            }
+            return value;
+        }
+
+        function angleMoveLimited(angle1, angle2, limit) {
+            let rawDistance = angle2 - angle1;
+            let distanceReverse = (Math.PI * 2 - Math.abs(rawDistance)) * (-Math.sign(rawDistance))
+            let result = 0;
+            if (Math.abs(rawDistance) < Math.abs(distanceReverse)) {
+                result = rawDistance;
+            } else {
+                result = distanceReverse;
+            }
+            return Math.sign(result) * Math.min(limit, Math.abs(result))
+        }
+
+        function getRandomInt(min, max) {
+            min = Math.ceil(min);
+            max = Math.floor(max);
+            return Math.floor(Math.random() * (max - min + 1)) + min;
+        }
+
+        function confine(value, range) {
+            return Math.max(range[0], Math.min(range[1], value));
+        }
+
+        function chooseEvaderBehavior(invader, evader, evaderNetwork) {
+            let options = [[0, 0], [0, 1], [0, -1], [1, 0], [1, 1], [1, -1]]
+            // let options = [[1, 0], [1, 1], [1, -1]] //this is debug
+            let optionIdx;
+            let results = [];
+            for (optionIdx = 0; optionIdx < options.length; optionIdx++) {
+                let input = evaderNetwork.makeInput(invader, evader)
+                input[3] = options[optionIdx][0]
+                input[4] = options[optionIdx][1]
+                let output = evaderNetwork.calc(input);
+                results.push(output)
+                let result = output[2][0]
+                if (result < 0) {
+                    console.log("Using NON random behavior")
+                    break;
+                }
+            }
+            if (optionIdx >= options.length) {
+                optionIdx = getRandomInt(0, options.length - 1)
+                console.log("Using random behavior " + options[optionIdx][0] + " " + options[optionIdx][1])
+            }
+            networkDrawState = results[optionIdx];
+            evader.shipBase.acceleratorOn = options[optionIdx][0]
+            evader.rotationOn = options[optionIdx][1]
+        }
+
+
         let evaderNetwork = new Network(
-            (input) => sign(input),
-            (input) => sign(input),
-            [3, 4, 2],
-            [[0, 3, 1], [4, 7, 1]]
+            (input) => (Math.sign(input) + 1) / 2,
+            (input) => Math.sign(input),
+            [5, 6, 1],
+            [
+                new Link(new Node(0, 0), new Node(1, 0), 1),
+                new Link(new Node(0, 0), new Node(1, 1), -1),
+
+                new Link(new Node(0, 1), new Node(1, 0), 1),
+                new Link(new Node(0, 1), new Node(1, 1), 1),
+                new Link(new Node(0, 1), new Node(1, 2), -1),
+
+                new Link(new Node(0, 2), new Node(1, 1), 1),
+                new Link(new Node(0, 2), new Node(1, 2), 1),
+                new Link(new Node(0, 2), new Node(1, 3), -1),
+
+                new Link(new Node(0, 3), new Node(1, 2), 1),
+                new Link(new Node(0, 3), new Node(1, 3), 1),
+                new Link(new Node(0, 3), new Node(1, 4), -1),
+
+                new Link(new Node(0, 4), new Node(1, 3), 1),
+                new Link(new Node(0, 4), new Node(1, 4), 1),
+                new Link(new Node(0, 4), new Node(1, 5), -1),
+
+                new Link(new Node(1, 0), new Node(2, 0), 1),
+                new Link(new Node(1, 1), new Node(2, 0), 1),
+                new Link(new Node(1, 2), new Node(2, 0), 1),
+                new Link(new Node(1, 3), new Node(2, 0), 1),
+                new Link(new Node(1, 4), new Node(2, 0), 1),
+                new Link(new Node(1, 5), new Node(2, 0), 1)
+            ]
         )
 
         const accelStart = (e) => {
             switch (e.key) {
                 case 'a':
-                    invader.accel.x.negative = 1;
+                    //invader.accel.x.negative = 1;
                     break;
                 case 'd':
-                    invader.accel.x.positive = 1;
+                    //invader.accel.x.positive = 1;
                     break;
                 case 'w':
-                    invader.accel.y.positive = 1;
+                    invader.shipBase.acceleratorOn = 1;
                     break;
                 case 's':
-                    invader.accel.y.negative = 1;
+                    //invader.accel.y.negative = 1;
                     break;
+                case 'q':
                 case ' ':
                     invader.gun.pressed = 1;
                     break;
@@ -100,69 +388,33 @@
         const accelStop = (e) => {
             switch (e.key) {
                 case 'a':
-                    invader.accel.x.negative = 0;
+                    //invader.accel.x.negative = 0;
                     break;
                 case 'd':
-                    invader.accel.x.positive = 0;
+                    // invader.accel.x.positive = 0;
                     break;
                 case 'w':
-                    invader.accel.y.positive = 0;
+                    invader.shipBase.acceleratorOn = 0;
                     break;
                 case 's':
-                    invader.accel.y.negative = 0;
+                    //invader.accel.y.negative = 0;
                     break;
+                case 'q':
                 case ' ':
                     invader.gun.pressed = 0;
                     break;
             }
         };
 
-        function makeShip(x, y, rot, color) {
-            return {
-                "pos": { "x": x, "y": y },
-                "vel": { "x": 0, "y": 0 },
-                "accel": {
-                    "x": {
-                        "positive": 0, "negative": 0
-                    },
-                    "y": {
-                        "positive": 0, "negative": 0
-                    }
-                },
-                "rotation_target": {
-                    "x": 0, "y": 0
-                },
-                "rot": rot,
-                "fillStyle": color,
-                "gun": {
-                    "pressed": 0,
-                    "cooldown": 0
-                }
-            }
-        }
-
-        function makeBullet(x, y, velX, velY, color) {
-            return {
-                "pos": { "x": x, "y": y },
-                "vel": { "x": velX, "y": velY },
-                "size": bulletSize,
-                "fillStyle": color
-            }
-        }
 
         var mouse_pos = { "x": 0, "y": 0 };
 
-        var invader = makeShip(150, 200, Math.PI / 4, "red")
-        var evader = makeShip(300, 300, Math.PI * 3 / 4, "blue")
+        var invader = new PlayerShip(new ShipBase(150, 200, 0, playerColor))
+        var evader = new EvaderShip(new ShipBase(300, 300, 0, enemyColor))
 
-        var bullets = []
+        var playerBulletPool = new BulletPool(bulletPoolSize, "black")
         var bulletPoolIdx = 0
-        var bullet = makeBullet(30, 30, 0, 0, "black");
-        for (let i = 0; i < bulletPoolSize; i++) {
-            bullets.push(makeBullet(-100, -100, 0, 0, "black"))
-        }
 
-        bullets.push(bullet)
         function drawShip(ctx, ship) {
             //console.log(ship)
             ctx.fillStyle = ship.fillStyle;
@@ -172,10 +424,10 @@
             ctx.rotate(ship.rot);
 
             var path = new Path2D();
-            path.moveTo(50, 0);
-            path.lineTo(0, -20);
-            path.lineTo(10, 0);
-            path.lineTo(0, 20);
+            path.moveTo(30, 0);
+            path.lineTo(-30, -20);
+            path.lineTo(-20, 0);
+            path.lineTo(-30, 20);
             ctx.fill(path);
             ctx.restore();
         }
@@ -222,14 +474,16 @@
                 // use getContext to use the canvas for drawing
                 var ctx = canvas.getContext('2d');
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
-                ctx.transform(1, 0, 0, -1, 0, canvas.height) // flip y
+                ctx.font = "10px Arial";
+                ctx.fillText("Frame: " + frameNumber, 0, 10);
+                ctx.transform(1, 0, 0, -1, 0, canvas.height) // flip y    
 
                 drawBorder(ctx, canvas);
 
-                drawShip(ctx, invader);
-                drawShip(ctx, evader);
-                for (let i = 0; i < bullets.length; i++) {
-                    drawBullet(ctx, bullets[i]);
+                drawShip(ctx, invader.shipBase);
+                drawShip(ctx, evader.shipBase);
+                for (let i = 0; i < playerBulletPool.bullets.length; i++) {
+                    drawBullet(ctx, playerBulletPool.bullets[i]);
                 }
             } else {
                 alert('Canvas.getContext not supported in your browser');
@@ -257,7 +511,7 @@
 
                 let network = evaderNetwork;
                 for (var layerIdx = 0; layerIdx < network.layers.length; layerIdx++) {
-                    let xShift = 50 * (layerIdx + 1)
+                    let xShift = 100 * (layerIdx + 1)
                     for (var layerNodeIdx = 0; layerNodeIdx < network.layers[layerIdx]; layerNodeIdx++) {
                         let yShift = 50 * (layerNodeIdx + 1)
                         // console.log("draw node " + layerIdx + ":" + layerNodeIdx)
@@ -266,26 +520,44 @@
                             "size": annNodeSize,
                             "fillStyle": "black"
                         })
+                        let calcValue = Math.floor(networkDrawState[layerIdx][layerNodeIdx] * 10) / 10
+                        ctx.font = "10px Arial";
+                        ctx.fillText("" + calcValue, xShift, yShift + 10 + annNodeSize);
                     }
                 }
 
                 for (var linkIdx = 0; linkIdx < network.links.length; linkIdx++) {
-                    let fromIdx = network.links[linkIdx][0]
-                    let toIdx = network.links[linkIdx][1]
-                    let from = network.getNodeLayer(fromIdx)
-                    let to = network.getNodeLayer(toIdx)
-
+                    let link = network.links[linkIdx]
+                    let from = link.src
+                    let to = link.dst
 
                     // set line stroke and line width
-                    ctx.strokeStyle = 'red';
-                    ctx.lineWidth = Math.max(2, Math.log(network.links[linkIdx][2]));
+                    ctx.strokeStyle = 'black';
+                    let linkLog = Math.max(0, Math.log(Math.abs(link.weight * 5)) + 1)
+                    // console.log("linkIdx=" + linkIdx +
+                    //     " link.weight=" + link.weight +
+                    //     " width=" + linkLog)
+                    if (link.weight != 0 && linkLog > 3) {
+                        if (Math.sign(link.weight) > 0) {
+                            ctx.strokeStyle = 'green';
+                        } else {
+                            ctx.strokeStyle = 'red';
+                        }
+                    }
+                    if (linkLog == 0) {
+                        ctx.setLineDash([5, 3]);
+                        linkLog = 2;
+                    } else {
+                        ctx.setLineDash([]);
+                    }
+                    ctx.lineWidth = linkLog;
 
                     // draw a red line
                     ctx.beginPath();
-                    let xShift = 50 * (from.layerIdx + 1) + annNodeSize
+                    let xShift = 100 * (from.layerIdx + 1) + annNodeSize
                     let yShift = 50 * (from.layerNodeIdx + 1)
                     ctx.moveTo(xShift, yShift);
-                    xShift = 50 * (to.layerIdx + 1) - annNodeSize
+                    xShift = 100 * (to.layerIdx + 1) - annNodeSize
                     yShift = 50 * (to.layerNodeIdx + 1)
                     ctx.lineTo(xShift, yShift);
                     ctx.stroke();
@@ -312,7 +584,7 @@
             mouse_pos.x = mouseCanvas.x;
             mouse_pos.y = mouseCanvas.y;
             //reverse y as canvas has y 0 in the bottom left
-            invader.rot = Math.atan2(mouseCanvas.y - invader.pos.y, mouseCanvas.x - invader.pos.x)
+            invader.targetRot = Math.atan2(mouseCanvas.y - invader.shipBase.pos.y, mouseCanvas.x - invader.shipBase.pos.x)
         };
 
         let throttle = (func, delay) => {
@@ -338,7 +610,7 @@
 
         function handleGun(ship) {
             if (ship.gun.pressed && !ship.gun.cooldown) {
-                let bullet = getBullet(ship.pos, ship.vel, ship.rot)
+                let bullet = playerBulletPool.getBullet(ship.shipBase.pos, ship.shipBase.vel, ship.shipBase.rot)
                 ship.gun.cooldown = 1
             }
             if (!ship.gun.pressed) {
@@ -346,25 +618,39 @@
             }
         }
 
-        function handleInvader(ship) {
-            accel_x = (-ship.accel.x.negative + ship.accel.x.positive) * maxInvaderAccelPerFrame
-            accel_y = (-ship.accel.y.negative + ship.accel.y.positive) * maxInvaderAccelPerFrame
-            ship.vel.x += accel_x
-            ship.vel.y += accel_y
-            ship.pos.x += ship.vel.x
-            ship.pos.y += ship.vel.y
-            ship.vel.x *= 0.95
-            ship.vel.y *= 0.95
+        function handleShipBase(shipBase) {
+            let accel_x = shipBase.acceleratorOn * Math.cos(shipBase.rot) * maxInvaderAccelPerFrame
+            let accel_y = shipBase.acceleratorOn * Math.sin(shipBase.rot) * maxInvaderAccelPerFrame
+            shipBase.vel.x += accel_x
+            shipBase.vel.y += accel_y
+            shipBase.pos.x += shipBase.vel.x
+            shipBase.pos.y += shipBase.vel.y
+            shipBase.vel.x *= 0.95
+            shipBase.vel.y *= 0.95
 
-            if (Math.abs(ship.vel.x) < minInvaderSpeedPerFrame) ship.vel.x = 0
-            if (Math.abs(ship.vel.y) < minInvaderSpeedPerFrame) ship.vel.y = 0
+            if (Math.abs(shipBase.vel.x) < minInvaderSpeedPerFrame) shipBase.vel.x = 0
+            if (Math.abs(shipBase.vel.y) < minInvaderSpeedPerFrame) shipBase.vel.y = 0
 
-            ship.vel.x = Math.max(-maxInvaderSpeedPerFrame, Math.min(maxInvaderSpeedPerFrame, ship.vel.x));
-            ship.vel.y = Math.max(-maxInvaderSpeedPerFrame, Math.min(maxInvaderSpeedPerFrame, ship.vel.y));
+            shipBase.vel.x = Math.max(-maxInvaderSpeedPerFrame, Math.min(maxInvaderSpeedPerFrame, shipBase.vel.x));
+            shipBase.vel.y = Math.max(-maxInvaderSpeedPerFrame, Math.min(maxInvaderSpeedPerFrame, shipBase.vel.y));
+            shipBase.pos.x = confine(shipBase.pos.x, xRange)
+            shipBase.pos.y = confine(shipBase.pos.y, yRange)
+        }
 
-            ship.rot = Math.atan2(mouse_pos.y - ship.pos.y, mouse_pos.x - ship.pos.x)
+        function handleInvader(invader) {
+            let shipBase = invader.shipBase;
+            handleShipBase(shipBase)
 
-            handleGun(ship)
+            invader.targetRot = Math.atan2(mouse_pos.y - shipBase.pos.y, mouse_pos.x - shipBase.pos.x)
+            shipBase.rot += angleMoveLimited(normalizeAngle(shipBase.rot), normalizeAngle(invader.targetRot), maxInvaderRotPerFrame)
+
+            handleGun(invader)
+        }
+
+        function handleEvader(evader) {
+            let shipBase = evader.shipBase;
+            handleShipBase(shipBase)
+            shipBase.rot += evader.rotationOn * maxInvaderRotPerFrame;
         }
 
         function handleBullet(bullet) {
@@ -372,19 +658,42 @@
             bullet.pos.y += bullet.vel.y
         }
 
-        function logicFrame() {
-            handleInvader(invader)
-            for (let i = 0; i < bullets.length; i++) {
-                handleBullet(bullets[i]);
+        function handleBulletHitEvader(bulletPool) {
+            for (let i = 0; i < bulletPool.poolSize; i++) {
+                let b = bulletPool.bullets[i]
+                if (Math.abs(evader.shipBase.pos.x - b.pos.x) < b.size
+                    && Math.abs(evader.shipBase.pos.y - b.pos.y) < b.size) {
+                    // evader was hit
+                    b.vanish()
+                    evaderNetwork.trainOnLastEventsAsDeath(framesToCountAsHit)
+                    break;
+                }
             }
         }
 
+        function logicFrame() {
+            if (frameNumber % queuePeriod == 0) {
+                evaderNetwork.queueInput(invader, evader);
+            }
+            if (frameNumber % networkBehaviorUpdatePeriod == 0) {
+                chooseEvaderBehavior(invader, evader, evaderNetwork)
+            }
+            handleInvader(invader)
+            handleEvader(evader)
+
+            for (let i = 0; i < playerBulletPool.bullets.length; i++) {
+                handleBullet(playerBulletPool.bullets[i]);
+            }
+
+            handleBulletHitEvader(playerBulletPool)
+        }
+
         function frame() {
+            frameNumber++;
             logicFrame()
             drawFrame()
 
-            evader.rot -= 2 * Math.PI / 60;
-            bullet.pos.x += 1;
+            evader.rot -= 2 * Math.PI / 60 / 60;
             drawNetwork()
         }
 
@@ -398,6 +707,10 @@
 </head>
 
 <body onload="animate();">
+    <div id="instruction-div" style="width: 400px;">
+        Try to kill the blue guy as much as you can, but it will learn.
+        Use W to move, Q or Space to shoot. Mouse to rotate.
+    </div>
     <div id="frame-div" style="width: 400px; height: 400px;">
         <canvas id="frame-canvas"></canvas>
     </div>
