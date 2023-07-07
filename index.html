@@ -169,8 +169,8 @@
                 let networkResult = this.calc(input)
                 console.log("Network result " + networkResult + " expected result " + result)
                 if (networkResult[2][0] == result) {
-                    // console.log("No error, no updates to network")
-                    // return;
+                    console.log("No error, no updates to network")
+                    return;
                 }
                 let updates = 0
                 for (let secondLayerIdx = 0; secondLayerIdx < this.layers[1]; secondLayerIdx++) {
@@ -877,10 +877,10 @@
                     // evaderNetwork.trainOnLastEventsAsDeath(framesToCountAsHit)
                     evaderNetwork.trainSingle(evaderNetwork.makeInput(invader, evaderInstance), 1, 1)
                     console.log("Hit main, train as death")
-                    if (evaderGhost.isSafe(bulletPool)) {
-                        console.log("Safe ghost, train as safe")
-                        evaderNetwork.trainSingle(evaderNetwork.makeInput(invader, evaderGhost), -1, -1)
-                    }
+                    // if (evaderGhost.isSafe(bulletPool)) {
+                    console.log("Safe ghost, train as safe")
+                    evaderNetwork.trainSingle(evaderNetwork.makeInput(invader, evaderGhost), -1, -1)
+                    // }
 
                     // evader was hit
                     b.vanish()
