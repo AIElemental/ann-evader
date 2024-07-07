@@ -1,2 +1,244 @@
+<!DOCTYPE html>
 <html>
-<\html>
+<head>
+</head>
+<script type="text/javascript">
+        let a = 1;
+
+        /**
+         Based on previous ABABABABAB
+         prediction for next player move
+         take win of player move
+         */
+
+        const Shapes = Object.freeze({
+            ROCK:   Symbol("rock"),
+            PAPER:  Symbol("paper"),
+            SCISSORS: Symbol("scissors")
+        });
+
+        class Draw {
+            constructor(player1, player2) {
+                this.player1 = player1; //Shapes
+                this.player2 = player2; //Shapes
+            }
+
+            toIdx() {
+                if (this.player1 == Shapes.ROCK && this.player2 == Shapes.ROCK) return 0;
+                if (this.player1 == Shapes.ROCK && this.player2 == Shapes.PAPER) return 1;
+                if (this.player1 == Shapes.ROCK && this.player2 == Shapes.SCISSORS) return 2;
+                if (this.player1 == Shapes.PAPER && this.player2 == Shapes.ROCK) return 3;
+                if (this.player1 == Shapes.PAPER && this.player2 == Shapes.PAPER) return 4;
+                if (this.player1 == Shapes.PAPER && this.player2 == Shapes.SCISSORS) return 5;
+                if (this.player1 == Shapes.SCISSORS && this.player2 == Shapes.ROCK) return 6;
+                if (this.player1 == Shapes.SCISSORS && this.player2 == Shapes.PAPER) return 7;
+                if (this.player1 == Shapes.SCISSORS && this.player2 == Shapes.SCISSORS) return 8;
+                throw new Error('unexpected player1\player2 ' + this.toString());
+            }
+
+            getHumanIdx() {
+                if (this.player1 == Shapes.ROCK) return 0;
+                if (this.player1 == Shapes.PAPER) return 1;
+                if (this.player1 == Shapes.SCISSORS) return 2;
+                throw new Error('unexpected player1 ' + this.toString());
+            }
+
+            toString() {
+                return this.player1.toString() + "-vs-pc-" + this.player2.toString();
+            }
+        }
+
+        class History {
+            constructor() {
+                this.store1 = new Uint8Array(9*3).fill(0);
+                this.store2 = new Uint8Array(9*9*3).fill(0);
+                this.store3 = new Uint8Array(9*9*9*3).fill(0);
+                this.store4 = new Uint8Array(9*9*9*9*3).fill(0);
+            }
+
+            store(draws) {
+                // newest at the start
+                if (draws.length >= 2) {
+                    this.store1[draws[1].toIdx()*3 + draws[0].getHumanIdx()] += 1
+                }
+                if (draws.length >= 3) {
+                    this.store2[(draws[2].toIdx()*9+draws[1].toIdx())*3 + draws[0].getHumanIdx()] += 1
+                }
+                if (draws.length >= 4) {
+                    this.store3[((draws[3].toIdx()*9+draws[2].toIdx())*9+draws[1].toIdx())*3 + draws[0].getHumanIdx()] += 1
+                }
+                if (draws.length >= 5) {
+                    this.store4[(((draws[4].toIdx()*9+draws[3].toIdx())*9+draws[2].toIdx())*9+draws[1].toIdx())*3 + draws[0].getHumanIdx()] += 1
+                }
+            }
+
+            getNextDraw(draws) {
+                this.store(draws)
+                // newest at the start
+                let result;
+                try {
+                    let store4IdxBase = (((draws[3].toIdx()*9+draws[2].toIdx())*9+draws[1].toIdx())*9+draws[0].toIdx())*3
+                    let rocks = this.store4[store4IdxBase + 0]
+                    let papers = this.store4[store4IdxBase + 1]
+                    let scissors = this.store4[store4IdxBase + 2]
+                    result = this.getWinningFor(rocks, papers, scissors)
+                    console.log("Based on 4 last " + draws[3].toString() + "->" + draws[2].toString() + "->" + draws[1].toString() + "->" + draws[0].toString() + " history expected rocks:" + rocks + " papers:" + papers + " scissors:" + scissors + " choice=" + result.toString())
+                } catch(err) {
+                    console.log(err)
+                    try {
+                        let store3IdxBase = ((draws[2].toIdx()*9+draws[1].toIdx())*9+draws[0].toIdx())*3
+                        let rocks = this.store3[store3IdxBase + 0]
+                        let papers = this.store3[store3IdxBase + 1]
+                        let scissors = this.store3[store3IdxBase + 2]
+                        result = this.getWinningFor(rocks, papers, scissors)
+                        console.log("Based on 3 last " + draws[2].toString() + "->" + draws[1].toString() + "->" + draws[0].toString() + " history expected rocks:" + rocks + " papers:" + papers + " scissors:" + scissors + " choice=" + result.toString())
+                    } catch(err) {
+                        console.log(err)
+                        try {
+                            let store2IdxBase = (draws[1].toIdx()*9+draws[0].toIdx())*3
+                            let rocks = this.store2[store2IdxBase + 0]
+                            let papers = this.store2[store2IdxBase + 1]
+                            let scissors = this.store2[store2IdxBase + 2]
+                            result = this.getWinningFor(rocks, papers, scissors)
+                            console.log("Based on 2 last " + draws[1].toString() + "->" + draws[0].toString() + " history expected rocks:" + rocks + " papers:" + papers + " scissors:" + scissors + " choice=" + result.toString())
+                        } catch(err) {
+                            console.log(err)
+                            try {
+                                let store1IdxBase = draws[0].toIdx()*3
+                                let rocks = this.store1[store1IdxBase + 0]
+                                let papers = this.store1[store1IdxBase + 1]
+                                let scissors = this.store1[store1IdxBase + 2]
+                                console.log("Based on 1 last " + draws[0].toString() + " history expected rocks:" + rocks + " papers:" + papers + " scissors:" + scissors)
+                                result = this.getWinningFor(rocks, papers, scissors)
+                                console.log("Based on 1 last " + draws[0].toString() + " history expected rocks:" + rocks + " papers:" + papers + " scissors:" + scissors + " choice=" + result.toString())
+                            } catch(err) {
+                                console.log(err)
+                                result = this.getWinningRandom()
+                                console.log("Random choice " + result.toString())
+                            }
+                        }
+                    }
+                }
+                return result
+            }
+
+            getWinningFor(rocksIn, papersIn, scissorsIn) {
+                let rocks = rocksIn*10
+                let papers = papersIn*10
+                let scissors = scissorsIn*10
+                if (rocks == 0 && papers == 0 && scissors == 0) {
+                    throw new Error("No data")
+                }
+                //todo maybe random element should be removed
+                let choice = getRandomInt(rocks+papers+scissors+3)
+                if (choice < rocks + 1) return Shapes.PAPER //beats rock
+                if (choice < rocks + papers + 2) return Shapes.SCISSORS //beats paper
+                return Shapes.ROCK // beats scissors
+            }
+
+            getWinningRandom() {
+                let choice = getRandomInt(3)
+                if (choice < 1) return Shapes.ROCK
+                if (choice < 2) return Shapes.PAPER
+                return Shapes.SCISSORS
+            }
+        }
+
+        function getRandomInt(max) {
+            return Math.floor(Math.random() * max);
+        }
+
+        function animate() {
+            setInterval(() => { frame() }, msPerFrame);
+            window.addEventListener('keydown', accelStart);
+            window.addEventListener('keyup', accelStop);
+            document.addEventListener('mousemove', throttle(handleMousemove, msPerFrame));
+        }
+
+        let history = new History()
+        let draws = []
+        let player1Wins = 0
+        let player2Wins = 0
+
+        let block = 0
+
+        function player1Choose(player1Shape) {
+            let blockId = getRandomInt(1000000)
+            if (block != 0) return;
+            block = blockId
+            if (block != blockId) return;
+
+            player2Shape = history.getNextDraw(draws)
+            draws.unshift(new Draw(player1Shape, player2Shape))
+
+            let comment = "Again!"
+            if (player1Shape == Shapes.ROCK && player2Shape == Shapes.SCISSORS ||
+                player1Shape == Shapes.PAPER && player2Shape == Shapes.ROCK  ||
+                player1Shape == Shapes.SCISSORS && player2Shape == Shapes.PAPER
+            ) {
+                player1Wins++;
+                comment = "You win";
+                console.log("player win " + player1Wins)
+            }
+            if (player1Shape == Shapes.ROCK && player2Shape == Shapes.PAPER ||
+                player1Shape == Shapes.PAPER && player2Shape == Shapes.SCISSORS ||
+                player1Shape == Shapes.SCISSORS && player2Shape == Shapes.ROCK
+            ) {
+                player2Wins++;
+                comment = "You lose";
+                console.log("computer win " + player2Wins)
+            }
+
+            document.getElementById('label-div-latest-result').innerText = comment
+
+            if (player1Wins + player2Wins > 6) {
+                let winrate = Math.floor(100.0 * player1Wins / (player1Wins+player2Wins))
+                document.getElementById('label-div-winrate').innerText = "Your win rate " + winrate.toString() + "%"
+            }
+
+
+            document.getElementById('label-div-player1-latest').innerText = player1Shape.toString()
+            document.getElementById('label-div-player2-latest').innerText = player2Shape.toString()
+
+            block = 0
+        }
+
+        function player1ChooseRock() { player1Choose(Shapes.ROCK) }
+        function player1ChoosePaper() { player1Choose(Shapes.PAPER) }
+        function player1ChooseScissors() { player1Choose(Shapes.SCISSORS) }
+    </script>
+
+<body>
+<div id="instruction-div" style="width: 400px;">
+    Can you get 66% win rate?
+    Win rate is calculated after 6 rounds. Draws do not count.
+</div>
+<div id="player2-div" style="width: 400px; height: 100px;">
+    <div id="label-div-player2" style="width: 400px;">
+        Opponent latest choice
+    </div>
+    <div id="label-div-player2-latest" style="width: 400px;">
+        not selected
+    </div>
+</div>
+<div id="winrate-div" style="width: 400px; height: 100px;">
+    <div id="label-div-latest-result" style="width: 400px;">
+        Result for last choice will be here
+    </div>
+    <div id="label-div-winrate" style="width: 400px;">
+        Your win rate will be here
+    </div>
+</div>
+<div id="player1-div" style="width: 400px; height: 100px;">
+    <div id="label-div-player1" style="width: 400px;">
+        Your latest choice
+    </div>
+    <div id="label-div-player1-latest" style="width: 400px;">
+        not selected
+    </div>
+    <button onclick="player1ChooseRock()">Rock</button>
+    <button onclick="player1ChoosePaper()">Paper</button>
+    <button onclick="player1ChooseScissors()">Scissors</button>
+</div>
+</body>
+</html>
