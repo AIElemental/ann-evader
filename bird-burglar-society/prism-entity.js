@@ -96,3 +96,11 @@ function prismMutate(entity) {
 
     return child;
 }
+
+function randomPrism() {
+    return new Prism(
+        random255(),
+        random255(),
+        random255()
+    );
+}

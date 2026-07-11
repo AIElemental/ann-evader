@@ -28,12 +28,12 @@
     </style>
 </head>
 <body>
-    <div id="description">The current prism population</div>
+    <div id="description">The current bird population</div>
     <div id="prism-row" aria-label="Prism population"></div>
 
     <script src="bird-burglar-society/genetic-algorithm.js"></script>
     <script src="bird-burglar-society/helpers.js"></script>
-    <script src="bird-burglar-society/prism-entity.js"></script>
+    <script src="bird-burglar-society/bird-v1-entity.js"></script>
     <script>
         let fps = 60
         let msPerFrame = 1000 / fps;
@@ -69,8 +69,16 @@
             for (const prism of prisms) {
                 const square = document.createElement("div");
                 square.className = "prism";
-                square.style.backgroundColor = `rgb(${prism.r}, ${prism.g}, ${prism.b})`;
-                square.title = `rgb(${prism.r}, ${prism.g}, ${prism.b})`;
+                let backGroundColor
+                if (prism.behavior === BEHAVIOR_TRUST) {
+                    backGroundColor = `rgb(50, 140, 50)`
+                } else if (prism.behavior === BEHAVIOR_RECIPROCAL) {
+                    backGroundColor = `rgb(234, 206, 9)`
+                } else if (prism.behavior === BEHAVIOR_DECEIT) {
+                    backGroundColor = `rgb(140, 20, 20)`
+                }
+                square.style.backgroundColor = backGroundColor;
+                square.title = backGroundColor;
                 prismRow.append(square);
             }
         }
@@ -78,25 +86,25 @@
         const ga = new GeneticAlgorithm({
             populationSize: 100,
             maxAge: 3,
-            createRandomEntity: randomPrism,
-            fitnessFunction: prismFitness,
-            interactionRound: prismInteraction,
-            crossover: prismCrossover,
-            mutate: prismMutate
+            createRandomEntity: randomBird,
+            fitnessFunction: birdFitness,
+            interactionRound: birdInteraction,
+            crossover: birdCrossover,
+            mutate: birdMutate
         });
 
         let genPerSecMax = 5
         let nextNotBefore = 0
         let generation = 0
 
-        function stepGA(geneticAlgoryythmRunner) {
+        function stepGA(geneticAlgorithmRunner) {
             if (Date.now() < nextNotBefore) {
                 return
             }
             generation++
             nextNotBefore = Date.now() + 1000 / genPerSecMax
-            geneticAlgoryythmRunner.step();
-            console.log(generation, geneticAlgoryythmRunner.population[0].fitness, geneticAlgoryythmRunner.population[0]);
+            geneticAlgorithmRunner.step();
+            console.log(generation, geneticAlgorithmRunner.population[0].fitness, geneticAlgorithmRunner.population[0]);
         }
 
         function render() {

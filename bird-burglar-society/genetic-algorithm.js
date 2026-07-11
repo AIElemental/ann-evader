@@ -62,7 +62,7 @@ class GeneticAlgorithm {
         // Survivors
         // ----------------
         const survivors = this.population.filter(
-            e => e.age < this.maxAge
+            e => e.age < this.maxAge && e.fitness > 0
         );
 
         // The initial population is the same age, so it can otherwise all
