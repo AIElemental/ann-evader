@@ -65,6 +65,15 @@ class GeneticAlgorithm {
             e => e.age < this.maxAge
         );
 
+        // The initial population is the same age, so it can otherwise all
+        // expire in the same generation. Keep the best entity as a seed for
+        // the next population so tournament selection always has parents.
+        if (survivors.length === 0) {
+            const best = this.population[0];
+            best.age = 0;
+            survivors.push(best);
+        }
+
         // ----------------
         // Reproduce
         // ----------------
