@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bird Burglar Society</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 16px;
+            font-family: sans-serif;
+        }
+
+        #prism-row {
+            display: grid;
+            width: 100%;
+            align-content: start;
+            justify-content: start;
+        }
+
+        .prism {
+            box-sizing: border-box;
+            aspect-ratio: 1;
+            min-width: 24px;
+            min-height: 24px;
+            border: 1px solid black;
+        }
+    </style>
+</head>
+<body>
+    <div id="description">The current bird population</div>
+    <div id="prism-row" aria-label="Prism population"></div>
+
+    <script src="bird-burglar-society/genetic-algorithm.js"></script>
+    <script src="bird-burglar-society/helpers.js"></script>
+    <script src="bird-burglar-society/bird-v1-entity.js"></script>
+    <script>
+        let fps = 60
+        let msPerFrame = 1000 / fps;
+        
+        function renderEntities(prisms) {
+            const prismRow = document.getElementById("prism-row");
+            const availableWidth = prismRow.clientWidth;
+            const availableHeight = window.innerHeight - prismRow.getBoundingClientRect().top - 16;
+
+            let columns = 1;
+            let cellSize = 0;
+
+            // Choose the layout that gives every square the largest possible
+            // size while keeping the whole population in the visible viewport.
+            for (let candidateColumns = 1; candidateColumns <= prisms.length; candidateColumns++) {
+                const rows = Math.ceil(prisms.length / candidateColumns);
+                const candidateSize = Math.min(
+                    availableWidth / candidateColumns,
+                    availableHeight / rows
+                );
+
+                if (candidateSize > cellSize) {
+                    columns = candidateColumns;
+                    cellSize = candidateSize;
+                }
+            }
+
+            cellSize = Math.max(24, Math.floor(cellSize));
+            prismRow.style.gridTemplateColumns = `repeat(${columns}, ${cellSize}px)`;
+            prismRow.style.gridAutoRows = `${cellSize}px`;
+            prismRow.replaceChildren();
+
+            for (const prism of prisms) {
+                const square = document.createElement("div");
+                square.className = "prism";
+                let backGroundColor
+                if (prism.behavior === BEHAVIOR_TRUST) {
+                    backGroundColor = `rgb(50, 140, 50)`
+                } else if (prism.behavior === BEHAVIOR_RECIPROCAL) {
+                    backGroundColor = `rgb(234, 206, 9)`
+                } else if (prism.behavior === BEHAVIOR_DECEIT) {
+                    backGroundColor = `rgb(140, 20, 20)`
+                }
+                square.style.backgroundColor = backGroundColor;
+                square.title = backGroundColor;
+                prismRow.append(square);
+            }
+        }
+
+        const ga = new GeneticAlgorithm({
+            populationSize: 100,
+            maxAge: 3,
+            createRandomEntity: randomBird,
+            fitnessFunction: birdFitness,
+            interactionRound: birdInteraction,
+            crossover: birdCrossover,
+            mutate: birdMutate
+        });
+
+        let genPerSecMax = 5
+        let nextNotBefore = 0
+        let generation = 0
+
+        function stepGA(geneticAlgorithmRunner) {
+            if (Date.now() < nextNotBefore) {
+                return
+            }
+            generation++
+            nextNotBefore = Date.now() + 1000 / genPerSecMax
+            geneticAlgorithmRunner.step();
+            console.log(generation, geneticAlgorithmRunner.population[0].fitness, geneticAlgorithmRunner.population[0]);
+        }
+
+        function render() {
+            renderEntities(ga.population);
+            setInterval(() => { renderEntities(ga.population); }, msPerFrame);
+        }
+        render();
+        window.addEventListener("resize", () => renderEntities(ga.population));
+
+        function steps() {
+            stepGA(ga);
+            setInterval(() => { stepGA(ga); }, msPerFrame);
+        }
+        steps();
+    </script>
+</body>
+</html>
