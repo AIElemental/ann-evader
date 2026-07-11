@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+</head>
+<script src="bird-burglar-society/genetic-algorithm.js"></script>
+<script src="bird-burglar-society/helpers.js"></script>
+<script src="bird-burglar-society/prism-entity.js"></script>
+<script type="text/javascript">
+    const ga = new GeneticAlgorithm({
+
+        populationSize: 30,
+
+        maxAge: 3,
+
+        createRandomEntity: randomPrism,
+
+        fitnessFunction: prismFitness,
+
+        interactionRound: prismInteraction,
+
+        crossover: prismCrossover,
+
+        mutate: prismMutate
+
+    });
+
+    for (let generation = 0; generation < 20; generation++) {
+
+        ga.step();
+
+        console.log(
+            generation,
+            ga.population[0].fitness,
+            ga.population[0]
+        );
+    }
+</script>
+
+<body>
+<div id="description" style="width: 400px;">
+    haha
+</div>
+<div id="state-holder-1">
+    <div id="chart-holder-1">
+        <div id=""
+    </div>
+</div>
+</body>
+</html>
